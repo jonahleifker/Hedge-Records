@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Search, Trash2, Download, Plus, MoreVertical } from 'lucide-react';
+import { Search, Trash2, Download, Plus, MoreVertical, Target, DollarSign, Sliders, GitBranch } from 'lucide-react';
 import { TRADE_TYPES, CONTRACT_MONTHS } from '../utils/constants';
 import { HedgeTable } from './HedgeTable';
 import { exportToPDF } from '../utils/pdfExport';
@@ -17,6 +17,8 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showAddTrade, setShowAddTrade] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [activeMainTab, setActiveMainTab] = useState('positions');
+  const [activeToolTab, setActiveToolTab] = useState('coverage');
   
   const validMonths = CONTRACT_MONTHS[commodity] || [];
 
@@ -208,71 +210,132 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
         })}
       </div>
 
-      {/* Coverage Tracker */}
-      <CoverageTracker commodity={commodity} records={records} />
-
-      {/* PNL Section */}
-      <PnlView commodity={commodity} records={records} />
-      {/* What-If Scenario Tool */}
-      <WhatIfTool commodity={commodity} records={records} livePrice={livePrice} />
-
-      {/* Basis History */}
-      <BasisChart commodity={commodity} records={records} />
-
-      {/* Summary Stats Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <StatCard label="VWAP" value={vwap !== 'N/A' ? `${vwap} ¢` : 'N/A'} />
-        <StatCard label="Hedges" value={stats.hedgeCount.toLocaleString()} />
-        <StatCard label="Liquidations" value={stats.liqCount.toLocaleString()} />
-        <StatCard label="Avg Basis" value={stats.avgBasis} />
-        <StatCard
-          label={unrealizedMtm !== null ? 'Unrealized MTM' : 'Net Position (Bu)'}
-          value={unrealizedMtm !== null
-            ? `${unrealizedMtm >= 0 ? '+' : '-'}$${Math.abs(unrealizedMtm).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
-            : stats.netPosition.toLocaleString()}
-          valueClass={unrealizedMtm !== null
-            ? (unrealizedMtm >= 0 ? 'text-emerald-600' : 'text-red-500')
-            : (stats.netPosition > 0 ? 'text-[#00c48c]' : stats.netPosition < 0 ? 'text-red-500' : '')}
-        />
+      {/* Main Tab Toggle */}
+      <div className="flex border-b border-gray-200 mb-6">
+        <button
+          onClick={() => setActiveMainTab('positions')}
+          className={`pb-3 px-6 text-sm font-medium transition-colors border-b-2 ${
+            activeMainTab === 'positions' ? 'border-[#0f1f3d] text-[#0f1f3d]' : 'border-transparent text-gray-400 hover:text-gray-700'
+          }`}
+        >
+          Positions & Records
+        </button>
+        <button
+          onClick={() => setActiveMainTab('analytics')}
+          className={`pb-3 px-6 text-sm font-medium transition-colors border-b-2 ${
+            activeMainTab === 'analytics' ? 'border-[#0f1f3d] text-[#0f1f3d]' : 'border-transparent text-gray-400 hover:text-gray-700'
+          }`}
+        >
+          Analytics Tools
+        </button>
       </div>
 
-      {/* Filters Bar */}
-      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col lg:flex-row gap-4 justify-between">
-        <div className="flex items-center space-x-2 w-full lg:w-1/3 relative">
-          <Search size={18} className="absolute left-3 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search Trade Number..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0f1f3d]/20"
-          />
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {TRADE_TYPES.map(type => (
-            <label key={type} className="flex items-center space-x-2 text-sm text-gray-700 border border-gray-200 bg-white px-3 py-1.5 rounded-lg cursor-pointer hover:bg-gray-50">
+      {activeMainTab === 'positions' ? (
+        <div className="flex flex-col min-w-0">
+          {/* Summary Stats Bar */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+            <StatCard label="VWAP" value={vwap !== 'N/A' ? `${vwap} ¢` : 'N/A'} />
+            <StatCard label="Hedges" value={stats.hedgeCount.toLocaleString()} />
+            <StatCard label="Liquidations" value={stats.liqCount.toLocaleString()} />
+            <StatCard label="Avg Basis" value={stats.avgBasis} />
+            <StatCard
+              label={unrealizedMtm !== null ? 'Unrealized MTM' : 'Net Position (Bu)'}
+              value={unrealizedMtm !== null
+                ? `${unrealizedMtm >= 0 ? '+' : '-'}$${Math.abs(unrealizedMtm).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+                : stats.netPosition.toLocaleString()}
+              valueClass={unrealizedMtm !== null
+                ? (unrealizedMtm >= 0 ? 'text-emerald-600' : 'text-red-500')
+                : (stats.netPosition > 0 ? 'text-[#00c48c]' : stats.netPosition < 0 ? 'text-red-500' : '')}
+            />
+          </div>
+
+          {/* Filters Bar */}
+          <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row gap-4 justify-between">
+            <div className="flex items-center space-x-2 w-full md:w-1/3 relative">
+              <Search size={18} className="absolute left-3 text-gray-400" />
               <input
-                type="checkbox"
-                checked={typeFilters.has(type)}
-                onChange={() => toggleTypeFilter(type)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                type="text"
+                placeholder="Search Trade Number..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0f1f3d]/20"
               />
-              <span>{type}</span>
-            </label>
-          ))}
-        </div>
-      </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {TRADE_TYPES.map(type => (
+                <label key={type} className="flex items-center space-x-2 text-sm text-gray-700 border border-gray-200 bg-white px-3 py-1.5 rounded-lg cursor-pointer hover:bg-gray-50">
+                  <input
+                    type="checkbox"
+                    checked={typeFilters.has(type)}
+                    onChange={() => toggleTypeFilter(type)}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>{type}</span>
+                </label>
+              ))}
+            </div>
+          </div>
 
-      {/* Table Area */}
-      <div className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden flex flex-col min-h-[400px] mb-8">
-        <HedgeTable
-          records={filteredRecords}
-          commodity={commodity}
-          updateRecord={updateRecord}
-          deleteRecord={deleteRecord}
-          livePrice={livePrice}
-        />
-      </div>
+          {/* Table Area */}
+          <div className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden flex flex-col flex-1 min-h-[500px] mb-8">
+            <HedgeTable
+              records={filteredRecords}
+              commodity={commodity}
+              updateRecord={updateRecord}
+              deleteRecord={deleteRecord}
+              livePrice={livePrice}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col min-w-0">
+          <div className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden mb-8">
+            <div className="flex border-b border-gray-200 bg-gray-50 overflow-x-auto scrollbar-hide">
+              <button
+                onClick={() => setActiveToolTab('coverage')}
+                className={`flex items-center gap-2 px-6 py-4 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
+                  activeToolTab === 'coverage' ? 'border-[#0f1f3d] text-[#0f1f3d] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Target size={16} /> Expected Production Coverage
+              </button>
+              <button
+                onClick={() => setActiveToolTab('pnl')}
+                className={`flex items-center gap-2 px-6 py-4 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
+                  activeToolTab === 'pnl' ? 'border-[#0f1f3d] text-[#0f1f3d] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <DollarSign size={16} /> Realized P&L
+              </button>
+              <button
+                onClick={() => setActiveToolTab('whatif')}
+                className={`flex items-center gap-2 px-6 py-4 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
+                  activeToolTab === 'whatif' ? 'border-[#0f1f3d] text-[#0f1f3d] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <Sliders size={16} /> What-If Scenario
+              </button>
+              <button
+                onClick={() => setActiveToolTab('basis')}
+                className={`flex items-center gap-2 px-6 py-4 text-sm font-medium whitespace-nowrap transition-colors border-b-2 ${
+                  activeToolTab === 'basis' ? 'border-[#0f1f3d] text-[#0f1f3d] bg-white' : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <GitBranch size={16} /> Historical Basis
+              </button>
+            </div>
+            
+            <div className="p-6 bg-gray-50/30 min-h-[400px]">
+              <div className="max-w-4xl mx-auto [&>div]:!mb-0">
+                {activeToolTab === 'coverage' && <CoverageTracker commodity={commodity} records={records} />}
+                {activeToolTab === 'pnl' && <PnlView commodity={commodity} records={records} />}
+                {activeToolTab === 'whatif' && <WhatIfTool commodity={commodity} records={records} livePrice={livePrice} />}
+                {activeToolTab === 'basis' && <BasisChart commodity={commodity} records={records} />}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Trade Modal */}
       {showAddTrade && (
