@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { UploadCloud, FileSpreadsheet, CheckCircle, AlertCircle, X, ChevronRight, Save } from 'lucide-react';
+import { UploadCloud, FileSpreadsheet, CheckCircle, AlertCircle, X, ChevronRight, Save, Clipboard } from 'lucide-react';
 import { COMMODITIES } from '../utils/constants';
 import { parseExcelFile, EXPECTED_FIELDS, validateRow } from '../utils/excelParser';
 import { format } from 'date-fns';
@@ -19,8 +19,10 @@ export function UploadTrades({ addRecords }) {
   
   // Preview State
   const [previewRows, setPreviewRows] = useState([]);
-  const [selectedRows, setSelectedRows] = useState(new Set()); // indices of selected rows
+  const [selectedRows, setSelectedRows] = useState(new Set());
   const [importSuccess, setImportSuccess] = useState(null);
+  const [uploadMode, setUploadMode] = useState('file'); // 'file' or 'paste'
+  const [pasteText, setPasteText] = useState('');
 
   const fileInputRef = useRef(null);
 
@@ -204,27 +206,92 @@ export function UploadTrades({ addRecords }) {
 
           {/* STEP 1: UPLOAD */}
           {step === 1 && (
-            <div
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
-              className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:bg-gray-50 transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                <UploadCloud size={32} />
+            <div>
+              {/* Mode Toggle */}
+              <div className="flex gap-2 mb-4">
+                <button
+                  onClick={() => setUploadMode('file')}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors',
+                    uploadMode === 'file' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                  )}
+                >
+                  <UploadCloud size={16} /> Upload File
+                </button>
+                <button
+                  onClick={() => setUploadMode('paste')}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors',
+                    uploadMode === 'paste' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'
+                  )}
+                >
+                  <Clipboard size={16} /> Paste from Clipboard
+                </button>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-1">Click or drag file to this area to upload</h3>
-              <p className="text-gray-500 text-sm mb-6">Support for a single .xlsx or .xls file.</p>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleChange}
-                accept=".xlsx, .xls"
-                className="hidden"
-              />
-              <button className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
-                Browse Files
-              </button>
+
+              {uploadMode === 'file' ? (
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleDrop}
+                  className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:bg-gray-50 transition-colors cursor-pointer"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <UploadCloud size={32} />
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-1">Click or drag file to this area to upload</h3>
+                  <p className="text-gray-500 text-sm mb-6">Support for a single .xlsx or .xls file.</p>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleChange}
+                    accept=".xlsx, .xls"
+                    className="hidden"
+                  />
+                  <button className="px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+                    Browse Files
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-500">Paste tab-separated data from your spreadsheet. First row should be headers.</p>
+                  <textarea
+                    value={pasteText}
+                    onChange={(e) => setPasteText(e.target.value)}
+                    placeholder={`tradeDate\ttradeNumber\ttradeType\tcashPrice\tfuturesPrice\tbasis\tsizeInBushels\n02/28/2026\tCN-2000\tHedge\t440.00\t484.50\t-44.50\t5000`}
+                    rows={10}
+                    className="w-full border border-gray-300 rounded-xl p-4 text-sm font-mono outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
+                  />
+                  <button
+                    onClick={() => {
+                      if (!pasteText.trim()) { setError('Please paste some data.'); return; }
+                      const lines = pasteText.trim().split('\n');
+                      if (lines.length < 2) { setError('Need at least a header row and one data row.'); return; }
+                      const headers = lines[0].split('\t').map(h => h.trim());
+                      const rows = lines.slice(1).map(line => {
+                        const vals = line.split('\t');
+                        const obj = {};
+                        headers.forEach((h, i) => { obj[h] = vals[i]?.trim() || ''; });
+                        return obj;
+                      });
+                      setParsedData({ headers, rows });
+                      const initialMap = {};
+                      EXPECTED_FIELDS.forEach(field => {
+                        const match = headers.find(h =>
+                          h.toLowerCase().trim() === field.key.toLowerCase() ||
+                          h.toLowerCase().trim() === field.label.toLowerCase()
+                        );
+                        if (match) initialMap[field.key] = match;
+                      });
+                      setMapping(initialMap);
+                      setStep(2);
+                    }}
+                    className="px-5 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    Parse Pasted Data
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

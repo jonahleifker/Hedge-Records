@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import { TrendingUp, TrendingDown, BarChart3, Wheat, FileSpreadsheet, Leaf } from 'lucide-react';
+import { TrendingUp, TrendingDown, BarChart3, Wheat, FileSpreadsheet, Leaf, DollarSign, Download } from 'lucide-react';
 import { CONTRACT_MONTHS } from '../utils/constants';
+import { generateExecutiveSummary } from '../utils/executiveSummary';
 
 const COMMODITY_ICONS = {
   Wheat: Wheat,
@@ -25,6 +26,25 @@ function calcStats(records) {
     if (r.basis && !isNaN(parseFloat(r.basis))) { sumBasis += parseFloat(r.basis); basisCount++; }
   });
   return { totalBushels, hedgeCount, liqCount, netPosition, avgBasis: basisCount > 0 ? (sumBasis / basisCount).toFixed(2) : 'N/A' };
+}
+
+function calcRealizedPnl(records) {
+  return records.reduce((sum, r) => {
+    if (r.tradeType !== 'Liquidation') return sum;
+    const sell = parseFloat(r.sellPrice);
+    const buy = parseFloat(r.futuresPrice);
+    const size = parseInt(r.sizeInBushels) || 0;
+    if (isNaN(sell) || isNaN(buy)) return sum;
+    return sum + ((sell - buy) / 100) * size;
+  }, 0);
+}
+
+function fmtPnl(v) {
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '-' : '+';
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+  if (abs >= 1_000)     return `${sign}$${(abs / 1_000).toFixed(1)}k`;
+  return `${sign}$${abs.toFixed(0)}`;
 }
 
 function MonthBreakdown({ commodity, records }) {
@@ -109,7 +129,7 @@ function CommodityCard({ commodity, records, onNavigate }) {
   );
 }
 
-export function PortfolioOverview({ data, onNavigate }) {
+export function PortfolioOverview({ data, onNavigate, accountName }) {
   const commodities = ['Wheat', 'Corn', 'Soybeans'];
 
   const totalBushels = useMemo(() => {
@@ -123,9 +143,16 @@ export function PortfolioOverview({ data, onNavigate }) {
     return commodities.reduce((sum, c) => sum + (data[c]?.length || 0), 0);
   }, [data]);
 
+  const totalPnl = useMemo(() => {
+    return commodities.reduce((sum, c) => sum + calcRealizedPnl(data[c] || []), 0);
+  }, [data]);
+
+  const hasPnl = commodities.some(c => (data[c] || []).some(r => r.tradeType === 'Liquidation' && r.sellPrice));
+  const pnlPositive = totalPnl >= 0;
+
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 flex items-center">
             <BarChart3 className="mr-3 text-[#0f1f3d]" size={26} />
@@ -135,7 +162,45 @@ export function PortfolioOverview({ data, onNavigate }) {
             {totalTrades} total trades · {totalBushels.toLocaleString()} net bushels across all commodities
           </p>
         </div>
+        <button
+          onClick={() => generateExecutiveSummary(data, accountName || 'Account')}
+          className="flex items-center px-4 py-2 bg-[#0f1f3d] text-white font-medium rounded-lg hover:bg-[#1e3a5f] transition-colors shadow-sm text-sm"
+        >
+          <Download size={16} className="mr-2" />
+          Executive Summary
+        </button>
       </div>
+
+      {/* Aggregate PNL Banner */}
+      {hasPnl && (
+        <div className={`rounded-2xl p-5 flex items-center justify-between shadow-sm border mb-6 ${
+          pnlPositive
+            ? 'bg-gradient-to-r from-emerald-50 to-green-50 border-emerald-200'
+            : 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200'
+        }`}>
+          <div className="flex items-center gap-4">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+              pnlPositive ? 'bg-emerald-100' : 'bg-red-100'
+            }`}>
+              <DollarSign size={22} className={pnlPositive ? 'text-emerald-600' : 'text-red-500'} />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-0.5">Total Realized P&amp;L — All Commodities</p>
+              <p className={`text-3xl font-bold tracking-tight ${pnlPositive ? 'text-emerald-600' : 'text-red-500'}`}>
+                {fmtPnl(totalPnl)}
+              </p>
+            </div>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 text-sm font-medium">
+            {pnlPositive
+              ? <TrendingUp size={20} className="text-emerald-500" />
+              : <TrendingDown size={20} className="text-red-400" />}
+            <span className={pnlPositive ? 'text-emerald-600' : 'text-red-500'}>
+              Across {commodities.length} commodities
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {commodities.map(c => (

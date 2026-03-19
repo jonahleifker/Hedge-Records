@@ -1,16 +1,18 @@
-import { useState, useMemo } from 'react';
-import { Trash2, ChevronLeft, ChevronRight, Edit2, Check, X, ArrowDown, ArrowUp } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Trash2, ChevronLeft, ChevronRight, Edit2, Check, X, ArrowDown, ArrowUp, MessageSquare, FileText } from 'lucide-react';
 import { format } from 'date-fns';
 import { clsx } from 'clsx';
 import { TRADE_TYPE_COLORS, TRADE_TYPES, CONTRACT_MONTHS } from '../utils/constants';
+import { generateTradeConfirmation } from '../utils/tradeConfirmation';
 
-export function HedgeTable({ records, commodity, updateRecord, deleteRecord }) {
+export function HedgeTable({ records, commodity, updateRecord, deleteRecord, livePrice }) {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(25);
   const [sortConfig, setSortConfig] = useState({ key: 'tradeDate', direction: 'desc' });
-  const [editingCell, setEditingCell] = useState(null); // { id, field }
+  const [editingCell, setEditingCell] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [expandedNotes, setExpandedNotes] = useState(new Set());
 
   // Sorting
   const sortedRecords = useMemo(() => {
@@ -76,6 +78,14 @@ export function HedgeTable({ records, commodity, updateRecord, deleteRecord }) {
     if (e.key === 'Escape') cancelEdit();
   };
 
+  const toggleNotes = (id) => {
+    setExpandedNotes(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
   const columns = [
     { key: 'tradeDate', label: 'Trade Date' },
     { key: 'tradeNumber', label: 'Trade Number' },
@@ -85,6 +95,8 @@ export function HedgeTable({ records, commodity, updateRecord, deleteRecord }) {
     { key: 'futuresPrice', label: 'Futures Price', align: 'right' },
     { key: 'basis', label: 'Basis', align: 'right' },
     { key: 'sizeInBushels', label: 'Size (Bu)', align: 'right' },
+    { key: 'revenue', label: 'Rev / P&L', align: 'right' },
+    { key: 'mtm', label: 'MTM', align: 'right' },
   ];
 
   const EditableCell = ({ record, field, align = 'left', isEnum = false }) => {
@@ -113,8 +125,6 @@ export function HedgeTable({ records, commodity, updateRecord, deleteRecord }) {
           step={field === 'sizeInBushels' ? '5000' : field.includes('Price') || field === 'basis' ? '0.25' : '1'}
           value={editValue}
           onChange={(e) => {
-            // If they are editing size, we will keep storing it as absolute, so if they type negative we abs it out.
-            // The display logic handles the negative.
             let val = e.target.value;
             if (field === 'sizeInBushels' && val.startsWith('-')) {
                val = val.replace('-', '');
@@ -129,6 +139,47 @@ export function HedgeTable({ records, commodity, updateRecord, deleteRecord }) {
           )}
         />
       );
+    }
+
+    // Computed: Revenue (Realized P&L)
+    if (field === 'revenue') {
+      if (record.tradeType === 'Liquidation') {
+        const sell = parseFloat(record.sellPrice);
+        const buy = parseFloat(record.futuresPrice);
+        const size = parseInt(record.sizeInBushels) || 0;
+        if (!isNaN(sell) && !isNaN(buy)) {
+          const rev = ((sell - buy) / 100) * Math.abs(size);
+          const isPos = rev >= 0;
+          const sign = rev < 0 ? '-' : '+';
+          const formatted = `${sign}$${Math.abs(rev).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+          return (
+            <div className={clsx("flex items-center min-h-[24px] rounded px-1 -mx-1 justify-end font-medium", isPos ? "text-emerald-600" : "text-red-500")}>
+              {formatted}
+            </div>
+          );
+        }
+      }
+      return <div className="text-gray-300 italic flex items-center min-h-[24px] rounded px-1 -mx-1 justify-end">--</div>;
+    }
+
+    // Computed: MTM (Unrealized, for open Hedge/Rolled In positions)
+    if (field === 'mtm') {
+      if ((record.tradeType === 'Hedge' || record.tradeType === 'Rolled In') && livePrice !== null && livePrice !== undefined) {
+        const fp = parseFloat(record.futuresPrice);
+        const size = parseInt(record.sizeInBushels) || 0;
+        if (!isNaN(fp) && size > 0) {
+          const mtm = ((livePrice - fp) / 100) * size;
+          const isPos = mtm >= 0;
+          const sign = mtm < 0 ? '-' : '+';
+          const formatted = `${sign}$${Math.abs(mtm).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+          return (
+            <div className={clsx("flex items-center min-h-[24px] rounded px-1 -mx-1 justify-end font-medium text-xs", isPos ? "text-blue-600" : "text-orange-500")}>
+              {formatted}
+            </div>
+          );
+        }
+      }
+      return <div className="text-gray-300 italic flex items-center min-h-[24px] rounded px-1 -mx-1 justify-end text-xs">--</div>;
     }
 
     let displayValue = record[field];
@@ -200,32 +251,71 @@ export function HedgeTable({ records, commodity, updateRecord, deleteRecord }) {
                   </span>
                 </th>
               ))}
-              <th className="px-4 py-3 w-16 text-right">Actions</th>
+              <th className="px-4 py-3 w-24 text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {currentRecords.map(row => (
-              <tr key={row.id} className="hover:bg-gray-50 group">
-                {columns.map(col => (
-                  <td key={col.key} className={clsx("px-4 py-2.5", col.align === 'right' && "text-right")}>
-                    <EditableCell 
-                      record={row} 
-                      field={col.key} 
-                      align={col.align} 
-                      isEnum={col.key === 'tradeType'}
-                    />
+              <React.Fragment key={row.id}>
+                <tr className="hover:bg-gray-50 group">
+                  {columns.map(col => (
+                    <td key={col.key} className={clsx("px-4 py-2.5", col.align === 'right' && "text-right")}>
+                      <EditableCell 
+                        record={row} 
+                        field={col.key} 
+                        align={col.align} 
+                        isEnum={col.key === 'tradeType'}
+                      />
+                    </td>
+                  ))}
+                  <td className="px-4 py-2.5 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => toggleNotes(row.id)}
+                        className={clsx(
+                          "transition-colors p-1 rounded",
+                          expandedNotes.has(row.id) ? "text-blue-500" : "text-gray-400 hover:text-blue-500 opacity-0 group-hover:opacity-100",
+                          row.notes ? "opacity-100 text-blue-400" : ""
+                        )}
+                        title="Notes"
+                      >
+                        <MessageSquare size={14} />
+                      </button>
+                      <button
+                        onClick={() => generateTradeConfirmation(row, commodity)}
+                        className="text-gray-400 hover:text-indigo-500 transition-colors p-1 opacity-0 group-hover:opacity-100"
+                        title="Generate Confirmation"
+                      >
+                        <FileText size={14} />
+                      </button>
+                      <button 
+                        onClick={() => setDeleteConfirmId(row.id)}
+                        className="text-gray-400 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100"
+                        title="Delete Row"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </td>
-                ))}
-                <td className="px-4 py-2.5 text-right">
-                  <button 
-                    onClick={() => setDeleteConfirmId(row.id)}
-                    className="text-gray-400 hover:text-red-500 transition-colors p-1 opacity-0 group-hover:opacity-100"
-                    title="Delete Row"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </td>
-              </tr>
+                </tr>
+                {/* Expandable Notes Row */}
+                {expandedNotes.has(row.id) && (
+                  <tr key={`${row.id}-notes`} className="bg-blue-50/30">
+                    <td colSpan={columns.length + 1} className="px-6 py-2">
+                      <div className="flex items-start gap-3">
+                        <MessageSquare size={14} className="text-blue-400 mt-1 flex-shrink-0" />
+                        <textarea
+                          value={row.notes || ''}
+                          onChange={(e) => updateRecord(commodity, row.id, { notes: e.target.value })}
+                          placeholder="Add notes about this trade..."
+                          rows={2}
+                          className="flex-1 text-sm bg-white border border-gray-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 resize-none"
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
             {currentRecords.length === 0 && (
               <tr>

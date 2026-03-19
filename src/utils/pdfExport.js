@@ -176,7 +176,7 @@ export function exportToPDF(commodity, records) {
     const startY = drawPageHeaderAndStats(`Contract Month: ${month}`, stats);
 
     // Table Data Preparation
-    const tableColumns = ['Trade Date', 'Trade Number', 'Month', 'Type', 'Cash Price', 'Futures Price', 'Basis', 'Size (Bu)'];
+    const tableColumns = ['Trade Date', 'Trade Number', 'Month', 'Type', 'Cash Price', 'Futures Price', 'Basis', 'Size (Bu)', 'Rev / P&L'];
     const tableRows = monthRecords.map(r => {
       let dateStr = r.tradeDate;
       try { dateStr = format(new Date(r.tradeDate), 'MM/dd/yyyy'); } catch { /* ignore */ }
@@ -192,7 +192,19 @@ export function exportToPDF(commodity, records) {
       }
       const size = sizeNum ? sizeNum.toLocaleString() : '';
 
-      return [dateStr, r.tradeNumber || '', r.contractMonth || '', r.tradeType || '', cp, fp, bas, size];
+      let revStr = '';
+      if (r.tradeType === 'Liquidation') {
+        const sell = parseFloat(r.sellPrice);
+        const buy = parseFloat(r.futuresPrice);
+        const sz = parseInt(r.sizeInBushels) || 0;
+        if (!isNaN(sell) && !isNaN(buy)) {
+          const rev = ((sell - buy) / 100) * Math.abs(sz);
+          const sign = rev < 0 ? '-' : '+';
+          revStr = `${sign}$${Math.abs(rev).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        }
+      }
+
+      return [dateStr, r.tradeNumber || '', r.contractMonth || '', r.tradeType || '', cp, fp, bas, size, revStr];
     });
 
     if (tableRows.length > 0) {

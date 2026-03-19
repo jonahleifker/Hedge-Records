@@ -138,25 +138,25 @@ export function FuturesView() {
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center space-y-4 md:space-y-0 mb-6 pb-2">
-        {/* Commodity Selector */}
-        <div className="flex space-x-2 overflow-auto scrollbar-hide">
-          {COMMODITIES.map(c => (
-            <button
-              key={c}
-              onClick={() => setActiveCommodity(c)}
-              className={`px-6 py-2 rounded-full text-sm font-medium transition-colors border shadow-sm flex-shrink-0 ${
-                activeCommodity === c 
-                  ? 'bg-[#0f1f3d] text-white border-[#0f1f3d]' 
-                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
+      {/* Commodity Selector */}
+      <div className="flex space-x-2 overflow-x-auto scrollbar-hide mb-3 pb-1">
+        {COMMODITIES.map(c => (
+          <button
+            key={c}
+            onClick={() => setActiveCommodity(c)}
+            className={`px-6 py-2 rounded-full text-sm font-medium transition-colors border shadow-sm flex-shrink-0 ${
+              activeCommodity === c 
+                ? 'bg-[#0f1f3d] text-white border-[#0f1f3d]' 
+                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
 
-        {/* Time Range Selector */}
+      {/* Time Range Selector */}
+      <div className="flex justify-end mb-4">
         <div className="flex space-x-1 bg-white p-1 rounded-lg border border-gray-200 shadow-sm">
           {TIME_RANGES.map(range => (
             <button

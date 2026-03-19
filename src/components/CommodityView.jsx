@@ -1,11 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Search, Trash2, Download, Plus, MoreVertical } from 'lucide-react';
 import { TRADE_TYPES, CONTRACT_MONTHS } from '../utils/constants';
 import { HedgeTable } from './HedgeTable';
 import { exportToPDF } from '../utils/pdfExport';
 import { AddTradeModal } from './AddTradeModal';
+import { PnlView } from './PnlView';
+import { CoverageTracker } from './CoverageTracker';
+import { WhatIfTool } from './WhatIfTool';
+import { BasisChart } from './BasisChart';
+import { fetchHistoricalData } from '../utils/yahooFinance';
 
-export function CommodityView({ commodity, records, updateRecord, deleteRecord, clearRecords, onAddRecord }) {
+export function CommodityView({ commodity, records, updateRecord, deleteRecord, clearRecords, onAddRecord, isBroker = true }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilters, setTypeFilters] = useState(new Set(TRADE_TYPES));
   const [activeMonth, setActiveMonth] = useState('All');
@@ -39,6 +44,49 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
     return { totalBushels, hedgeCount, liqCount, netPosition, avgBasis: basisCount > 0 ? (sumBasis / basisCount).toFixed(2) : 'N/A' };
   }, [filteredRecords]);
 
+  // VWAP: volume-weighted average futures price across Hedge + Rolled In records
+  const vwap = useMemo(() => {
+    let sumPriceTimesSize = 0;
+    let sumSize = 0;
+    filteredRecords.forEach(r => {
+      if (r.tradeType !== 'Hedge' && r.tradeType !== 'Rolled In') return;
+      const fp = parseFloat(r.futuresPrice);
+      const size = parseInt(r.sizeInBushels) || 0;
+      if (!isNaN(fp) && size > 0) {
+        sumPriceTimesSize += fp * size;
+        sumSize += size;
+      }
+    });
+    return sumSize > 0 ? (sumPriceTimesSize / sumSize).toFixed(2) : 'N/A';
+  }, [filteredRecords]);
+
+  // Fetch live price for MTM
+  const [livePrice, setLivePrice] = useState(null);
+  useEffect(() => {
+    let mounted = true;
+    fetchHistoricalData(commodity, '1mo').then(data => {
+      if (mounted && data && data.length > 0) {
+        setLivePrice(data[data.length - 1].close);
+      }
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, [commodity]);
+
+  // Unrealized MTM
+  const unrealizedMtm = useMemo(() => {
+    if (livePrice === null) return null;
+    let total = 0;
+    filteredRecords.forEach(r => {
+      if (r.tradeType !== 'Hedge' && r.tradeType !== 'Rolled In') return;
+      const fp = parseFloat(r.futuresPrice);
+      const size = parseInt(r.sizeInBushels) || 0;
+      if (!isNaN(fp) && size > 0) {
+        total += ((livePrice - fp) / 100) * size;
+      }
+    });
+    return total;
+  }, [filteredRecords, livePrice]);
+
   // Month badge counts (net position per month for the tab pills)
   const monthStats = useMemo(() => {
     const out = {};
@@ -71,7 +119,7 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
   };
 
   return (
-    <div className="p-8 max-w-7xl mx-auto h-full flex flex-col">
+    <div className="p-8 max-w-7xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">{commodity} Records</h2>
@@ -121,10 +169,10 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
       </div>
 
       {/* Contract Month Selector with badges */}
-      <div className="flex space-x-2 overflow-auto mb-6 pb-2 scrollbar-hide">
+      <div className="flex flex-nowrap space-x-2 overflow-x-auto mb-6 py-2 scrollbar-hide min-w-0">
         <button
           onClick={() => setActiveMonth('All')}
-          className={`px-5 py-2 rounded-full text-sm font-medium transition-colors border shadow-sm flex-shrink-0 ${
+          className={`whitespace-nowrap px-5 py-2 rounded-full text-sm font-medium transition-colors border shadow-sm flex-shrink-0 ${
             activeMonth === 'All'
               ? 'bg-[#0f1f3d] text-white border-[#0f1f3d]'
               : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
@@ -139,7 +187,7 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
             <button
               key={m}
               onClick={() => setActiveMonth(m)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors border shadow-sm flex-shrink-0 ${
+              className={`whitespace-nowrap flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors border shadow-sm flex-shrink-0 ${
                 isActive
                   ? 'bg-[#0f1f3d] text-white border-[#0f1f3d]'
                   : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
@@ -147,7 +195,7 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
             >
               {m}
               {ms && ms.count > 0 && (
-                <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
                   isActive
                     ? 'bg-white/20 text-white'
                     : ms.net >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
@@ -160,16 +208,31 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
         })}
       </div>
 
+      {/* Coverage Tracker */}
+      <CoverageTracker commodity={commodity} records={records} />
+
+      {/* PNL Section */}
+      <PnlView commodity={commodity} records={records} />
+      {/* What-If Scenario Tool */}
+      <WhatIfTool commodity={commodity} records={records} livePrice={livePrice} />
+
+      {/* Basis History */}
+      <BasisChart commodity={commodity} records={records} />
+
       {/* Summary Stats Bar */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <StatCard label="Total Bushels" value={stats.totalBushels.toLocaleString()} />
+        <StatCard label="VWAP" value={vwap !== 'N/A' ? `${vwap} ¢` : 'N/A'} />
         <StatCard label="Hedges" value={stats.hedgeCount.toLocaleString()} />
         <StatCard label="Liquidations" value={stats.liqCount.toLocaleString()} />
         <StatCard label="Avg Basis" value={stats.avgBasis} />
         <StatCard
-          label="Net Position (Bu)"
-          value={stats.netPosition.toLocaleString()}
-          valueClass={stats.netPosition > 0 ? "text-[#00c48c]" : stats.netPosition < 0 ? "text-red-500" : ""}
+          label={unrealizedMtm !== null ? 'Unrealized MTM' : 'Net Position (Bu)'}
+          value={unrealizedMtm !== null
+            ? `${unrealizedMtm >= 0 ? '+' : '-'}$${Math.abs(unrealizedMtm).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`
+            : stats.netPosition.toLocaleString()}
+          valueClass={unrealizedMtm !== null
+            ? (unrealizedMtm >= 0 ? 'text-emerald-600' : 'text-red-500')
+            : (stats.netPosition > 0 ? 'text-[#00c48c]' : stats.netPosition < 0 ? 'text-red-500' : '')}
         />
       </div>
 
@@ -201,12 +264,13 @@ export function CommodityView({ commodity, records, updateRecord, deleteRecord, 
       </div>
 
       {/* Table Area */}
-      <div className="flex-1 bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden flex flex-col min-h-[400px]">
+      <div className="bg-white border border-gray-200 shadow-sm rounded-xl overflow-hidden flex flex-col min-h-[400px] mb-8">
         <HedgeTable
           records={filteredRecords}
           commodity={commodity}
           updateRecord={updateRecord}
           deleteRecord={deleteRecord}
+          livePrice={livePrice}
         />
       </div>
 

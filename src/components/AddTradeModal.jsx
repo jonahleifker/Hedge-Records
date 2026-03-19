@@ -137,6 +137,16 @@ export function AddTradeModal({ onClose, onSave, defaultCommodity }) {
             <input type="number" step="5000" min="0" placeholder="e.g. 5000" value={form.sizeInBushels}
               onChange={e => set('sizeInBushels', e.target.value)} className={inputClass} />
           </Field>
+
+          <Field label="Notes (optional)">
+            <textarea
+              placeholder="Add notes about this trade..."
+              value={form.notes || ''}
+              onChange={e => set('notes', e.target.value)}
+              rows={2}
+              className={`${inputClass} resize-none`}
+            />
+          </Field>
         </div>
 
         <div className="flex justify-end gap-3 px-6 pb-6">

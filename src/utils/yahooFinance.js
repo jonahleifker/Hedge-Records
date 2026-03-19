@@ -84,7 +84,12 @@ export async function fetchHistoricalData(commodity, range = '1mo') {
   const url = `/api/yahoo/v8/finance/chart/${ticker}?range=${range}&interval=${interval}`;
 
   try {
-    const response = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
     if (!response.ok) {
       throw new Error(`Failed to fetch Yahoo Finance: ${response.statusText}`);
     }
